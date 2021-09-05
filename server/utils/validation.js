@@ -41,14 +41,14 @@ const loginValidationUsername = (data) => {
 
 const userUpdateValidation = (data) => {
     const schema = Joi.object({
-        nickname: Joi.string()
+        username: Joi.string()
             .min(6)
             .max(255),
         email: Joi.string()
             .min(6)
             .max(500),
         password: Joi.string()
-            .min(6)
+            .min(8)
             .max(1024)
     });
     return schema.validate(data);

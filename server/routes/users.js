@@ -4,7 +4,7 @@ require('dotenv').config();
 const bcrypt = require('bcryptjs');
 const verify = require('./middlewares/verifyToken');
 const verifyAdmin = require('./middlewares/verifyAdminToken');
-const User = require('../models/User');
+const { User, Key, Product } = require("../models/models");
 const { userUpdateValidation } = require('../utils/validation');
 
 
@@ -48,11 +48,11 @@ router.get('/', verify, async(req, res) => {
  *            schema:
  *              type: object
  *              required:
- *                 - nickname
+ *                 - username
  *                 - email
  *                 - letter
  *              properties:
- *                 nickname:
+ *                 username:
  *                   type: string
  *                 email:
  *                   type: string
@@ -62,7 +62,7 @@ router.get('/', verify, async(req, res) => {
  *         '200':
  *           description: Successfull Request
  *         '400':
- *           description: You can only search by one parameter (nickname, email or letter)
+ *           description: You can only search by one parameter (username, email or letter)
  *         '401':
  *           description: Unauthorized
  *         '404':
@@ -71,23 +71,23 @@ router.get('/', verify, async(req, res) => {
  *           description: Internal servor error
  */
 router.post('/search', verify, async(req, res) => {
-    if (!req.body.nickname && req.body.email && req.body.letter) return res.status(400).send({ message: "Search can't be empty" });
-    if (((req.body.nickname && req.body.email) || (req.body.nickname && req.body.letter) || (req.body.letter && req.body.email))){
-        res.status(400).send("You can only search by one parameter (nickname, email or letter)")
+    if (!req.body.username && req.body.email && req.body.letter) return res.status(400).send({ message: "Search can't be empty" });
+    if (((req.body.username && req.body.email) || (req.body.username && req.body.letter) || (req.body.letter && req.body.email))){
+        res.status(400).send("You can only search by one parameter (username, email or letter)")
     }
     let users;
-    if (req.body.nickname){
+    if (req.body.username){
         const usersArray = [];
-        let usersFound = await User.find({ nickname: { $regex: `^.*${req.body.nickname}.*$` } })
+        let usersFound = await User.find({ username: { $regex: `^.*${req.body.username}.*$` } })
         if (usersFound){
             usersFound.forEach(user => {
                 if (req.user._id.toString() !== user._id.toString()) {
                     usersArray.push({
                         _id: user._id,
-                        nickname: user.nickname,
+                        username: user.username,
                         email: user.email,
-                        authorityLevel: user.authority.level,
-                        creationDate: user.date
+                        authority: user.authority,
+                        creationDate: user.creationDate
                     })
                 }
             })
@@ -98,13 +98,13 @@ router.post('/search', verify, async(req, res) => {
         const usersArray = [];
         let user = await User.find({ email: req.body.email.toLowerCase() })
         if (user && user.length !== 0){
-            if (req.user._id.toString() !== user._id.toString()) {
+            if (req.user._id.toString() !== user[0]._id.toString()) {
                 usersArray.push({
                     _id: user[0]._id,
-                    nickname: user[0].nickname,
+                    username: user[0].username,
                     email: user[0].email,
-                    authorityLevel: user[0].authority.level,
-                    creationDate: user[0].date
+                    authority: user[0].authority,
+                    creationDate: user[0].creationDate
                 })
             }
             users = usersArray
@@ -113,31 +113,31 @@ router.post('/search', verify, async(req, res) => {
         }
     }
     if (req.body.letter){
-        let userOne = await User.find({ nickname: { $regex: `^${req.body.letter.toLowerCase()}.*$` } })
-        let userTwo = await User.find({ nickname: { $regex: `^${req.body.letter.toUpperCase()}.*$` } })
+        let userOne = await User.find({ username: { $regex: `^${req.body.letter.toLowerCase()}.*$` } })
+        let userTwo = await User.find({ username: { $regex: `^${req.body.letter.toUpperCase()}.*$` } })
         const usersArray = [];
-        if (userOne){
+        if (userOne.length !== 0){
             userOne.forEach(user => {
                 if (req.user._id.toString() !== user._id.toString()) {
                     usersArray.push({
                         _id: user._id,
-                        nickname: user.nickname,
+                        username: user.username,
                         email: user.email,
-                        authorityLevel: user.authority.level,
-                        creationDate: user.date
+                        authority: user.authority,
+                        creationDate: user.creationDate
                     })
                 }
             })
         }
-        if (userTwo){
+        if (userTwo.length !== 0){
             userTwo.forEach(user => {
                 if (req.user._id.toString() !== user._id.toString()) {
                     usersArray.push({
                         _id: user._id,
-                        nickname: user.nickname,
+                        username: user.username,
                         email: user.email,
-                        authorityLevel: user.authority.level,
-                        creationDate: user.date
+                        authority: user.authority,
+                        creationDate: user.creationDate
                     })
                 }
             })
@@ -178,10 +178,8 @@ router.get('/:id', verify, async(req, res) => {
     if (!user) return res.status(400).send({ message: "User does not exist" });
     res.status(200).send({
         _id: user._id,
-        nickname: user.nickname,
-        authority: {
-            level: user.authority.level
-        }
+        username: user.username,
+        authority: user.authority
     });
 })
 
@@ -210,17 +208,13 @@ router.get('/:id', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.patch('/elevateToAdmin/:id', verify, async(req, res) => {
+router.patch('/elevateToAdmin/:id', verify, verifyAdmin, async(req, res) => {
     const user = await User.findOne({ _id: req.user._id })
-    if (!user) return res.status(400).send({ message: "The Token you used does not belong to an user" });
-    if (user.authority.level !== 10) return res.status(400).send({ message: "You don't have the authority to do that!" });
+    if (!user) return res.status(400).send({ message: "The token that you provided does not belong to an existing user" });
     const userToElevate = await User.findOne({ _id: req.params.id });
     if (!userToElevate) return res.status(400).send({ message: "The user you tried to elevate does not exist" });
-    if (userToElevate.authority.level === 10 && userToElevate.authority.adminToken !== "null") return res.status(400).send({ message: "The user already has admin authority" });
-    const salt = await bcrypt.genSalt(10);
-    const hashAdminToken = await bcrypt.hash(process.env.ADMIN_TOKEN, salt);
-    userToElevate.authority.level = 10;
-    userToElevate.authority.adminToken = hashAdminToken;
+    if (userToElevate.authority === 10) return res.status(400).send({ message: "The user already has admin authority" });
+    userToElevate.authority = 10;
     userToElevate.save();
     res.status(200).send({ message: "Elevated" });
 })
@@ -259,18 +253,17 @@ router.patch('/elevateToAdmin/:id', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.patch('/demote/:id', verify, async(req, res) => {
+router.patch('/demote/:id', verify, verifyAdmin, async(req, res) => {
     if (!req.body.ownerPassword) return res.status(401).send("Unauthorized (missing owner password)")
-    if (req.body.ownerPassword !== process.env.OWNER_SECRET_PASS) return res.status(401).send("Unauthorized (owner password does not correspond)")
+    if (req.body.ownerPassword !== process.env.OWNER_SECRET) return res.status(401).send("Unauthorized (owner password does not correspond)")
+    if (req.params.id === process.env.OWNER_ID) return res.status(401).send("Unauthorized, you can't demote the owner !")
     const user = await User.findOne({ _id: req.user._id })
-    if (!user) return res.status(400).send({ message: "The Token you used does not belong to an user" });
-    if (user.authority.level !== 10) return res.status(400).send({ message: "You don't have the authority to do that!" });
-    const userToElevate = await User.findOne({ _id: req.params.id });
-    if (!userToElevate) return res.status(400).send({ message: "The user you tried to demote does not exist" });
-    if (userToElevate.authority.level === 0 && userToElevate.authority.adminToken === "null") return res.status(400).send({message: "The user has no admin authority"});
-    userToElevate.authority.level = 0;
-    userToElevate.authority.adminToken = 'null';
-    userToElevate.save();
+    if (!user) return res.status(400).send({ message: "The token that you provided does not belong to an existing user" });
+    const userToDemote = await User.findOne({ _id: req.params.id });
+    if (!userToDemote) return res.status(400).send({ message: "The user you tried to demote does not exist" });
+    if (userToDemote.authority === 0) return res.status(400).send({message: "The user has no admin authority"});
+    userToDemote.authority = 0;
+    userToDemote.save();
     res.status(200).send({ message: "Demoted" });
 })
 
@@ -289,11 +282,11 @@ router.patch('/demote/:id', verify, async(req, res) => {
  *            schema:
  *              type: object
  *              required:
- *                 - nickname
+ *                 - username
  *                 - email
  *                 - password
  *              properties:
- *                 nickname:
+ *                 username:
  *                   type: string
  *                 email:
  *                   type: string
@@ -313,7 +306,7 @@ router.patch('/', verify, async(req, res) => {
     const userToUpdate = await User.findOne({ _id: mongoose.Types.ObjectId(req.user._id) })
     if (!userToUpdate) return res.status(400).send({ message: "User to update does not exist" })
         // Check body parameters existence
-    if (!req.body.nickname) { req.body.nickname = userToUpdate.nickname }
+    if (!req.body.username) { req.body.username = userToUpdate.username }
     if (!req.body.email) { req.body.email = userToUpdate.email }
     if (!req.body.password) {
         req.body.password = userToUpdate.password
@@ -332,7 +325,7 @@ router.patch('/', verify, async(req, res) => {
         if (checkEmailExistence) return res.status(401).send("This email already exist");
     }
     const updated = await userToUpdate.updateOne({
-        nickname: req.body.nickname,
+        username: req.body.username,
         email: req.body.email,
         password: req.body.password
     });
@@ -353,7 +346,7 @@ router.patch('/', verify, async(req, res) => {
  *          - Bearer: []
  *      responses:
  *         '200':
-     *           description: Successfully Deleted
+     *       description: Successfully Deleted
  *         '400':
  *           description: Token does not exist
  *         '401':
@@ -409,11 +402,11 @@ router.delete('/:id/:adminSecretPassword', verify, verifyAdmin, async(req, res) 
     if (!user) return res.status(400).send({ message: "The user does not exist" });
     if (parseInt(user.authority.level) === 10){
         if (!req.params.adminSecretPassword) return res.status(403).send("You can't delete an admin account without the owner secret pass")
-        if (req.params.adminSecretPassword !== process.env.OWNER_SECRET_PASS) return res.status(403).send("Wrong owner secret pass")
-        const APIKeys = await ApiKey.find({creatorID: req.params.id})
-        APIKeys.forEach(key => {
-            key.delete();
-        })
+        if (req.params.adminSecretPassword !== process.env.OWNER_SECRET) return res.status(403).send("Wrong owner secret pass")
+        const Keys = await Key.find({creatorID: req.params.id})
+        const Products = await Product.find( {ownerID: req.params.id} )
+        Keys.forEach(key => key.delete())
+        Products.forEach(product => product.delete())
         user.delete();
         res.status(200).send({ message: "Deleted User!" })
     }else{

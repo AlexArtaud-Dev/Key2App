@@ -7,7 +7,7 @@ const randtoken = require('rand-token');
 const ts = new Date();
 let mongoDBLink;
 let token;
-let username, email, password;
+let username, email, password, ownerID;
 
 console.clear();
 console.log("―――――――――――――――――――――――――――――――――")
@@ -130,10 +130,12 @@ setTimeout(async () => {
                                                                         password: hashPassword,
                                                                         username: username
                                                                     })
+
                                                                     newUser.save()
                                                                         .then(r => console.log("Super Admin Account successfully created"))
                                                                         .catch(err => console.log(err))
-
+                                                                    let userOwner = await User.findOne({email: email, password: hashPassword, username: username});
+                                                                    ownerID = userOwner._id;
                                                                     setTimeout(async () => {
                                                                         r6.close();
                                                                         console.clear();
@@ -147,7 +149,7 @@ setTimeout(async () => {
                                                                                 r7.question("You already successfully setup the project before. Do you want to erase the previous installation ? (Y/N)" , (answer) => {
                                                                                    if (answer.toLowerCase().includes("y")) {
                                                                                         console.clear()
-                                                                                       fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}`, function(err) {
+                                                                                       fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}\nOWNER_ID = ${ownerID}`, function(err) {
                                                                                                if(err) {
                                                                                                    return console.log(err);
                                                                                                }
@@ -162,7 +164,8 @@ setTimeout(async () => {
                                                                                 })
                                                                             }else{
                                                                                 console.clear()
-                                                                                fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}`, function(err) {
+                                                                                const ownerSecret = await randtoken.generate(128);
+                                                                                fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}\nOWNER_SECRET = ${ownerSecret}`, function(err) {
                                                                                         if(err) {
                                                                                             return console.log(err);
                                                                                         }
