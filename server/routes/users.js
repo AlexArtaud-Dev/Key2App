@@ -35,6 +35,88 @@ router.get('/', verify, async(req, res) => {
 
 /**
  * @swagger
+ * /users/invites/{userID}:
+ *   get:
+ *      description: Use to get user pending products invites from auth-token | or from a given userID [ADMIN ONLY]
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: path
+ *            name: userID
+ *            schema:
+ *              type: integer
+ *            required: false
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: User does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.get('/invites/:userID', verify, async(req, res) => {
+    if (req.params.userID !== 'undefined' && req.params.userID !== null && req.params.userID !== "{userID}"){
+        const user = await User.findOne({ _id: req.user._id })
+        const userToGet = await User.findOne({ _id: req.params.userID })
+        if (!user) return res.status(400).send("The token you used is not linked to an existing user" );
+        if (user.authority !== 10) return res.status(401).send("You can't check another user pending invites if you are not administrator!" );
+        if (userToGet.pendingInvites.length === 0) return res.status(200).send("The user currently has no pending invites");
+        res.status(200).send(userToGet.pendingInvites);
+    }else{
+        const user = await User.findOne({ _id: req.user._id })
+        if (!user) return res.status(400).send("The token you used is not linked to an existing user");
+        if (user.pendingInvites.length === 0) return res.status(200).send("You currently have no pending invites");
+        res.status(200).send(user.pendingInvites);
+    }
+})
+
+/**
+ * @swagger
+ * /users/ownedProducts/{userID}:
+ *   get:
+ *      description: Use to get user owned products invites from auth-token | or from a given userID [ADMIN ONLY]
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: path
+ *            name: userID
+ *            schema:
+ *              type: integer
+ *            required: false
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: User does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.get('/ownedProducts/:userID', verify, async(req, res) => {
+    if (req.params.userID !== 'undefined' && req.params.userID !== null && req.params.userID !== "{userID}"){
+        const user = await User.findOne({ _id: req.user._id })
+        const userToGet = await User.findOne({ _id: req.params.userID })
+        if (!user) return res.status(400).send("The token you used is not linked to an existing user" );
+        if (user.authority !== 10) return res.status(401).send("You can't check another user owned products if you are not administrator!" );
+        if (userToGet.ownedProducts.length === 0) return res.status(200).send("The user currently has no owned products");
+        res.status(200).send(userToGet.ownedProducts);
+    }else{
+        const user = await User.findOne({ _id: req.user._id })
+        if (!user) return res.status(400).send("The token you used is not linked to an existing user");
+        if (user.ownedProducts.length === 0) return res.status(200).send("You currently have no owned products");
+        res.status(200).send(user.ownedProducts);
+    }
+})
+
+/**
+ * @swagger
  * /users/search:
  *   post:
  *      description: Use to search for user with letter or name or email
@@ -334,6 +416,20 @@ router.patch('/', verify, async(req, res) => {
     const userUpdated = await User.findOne({ _id: req.user._id })
     res.status(200).send({ message: "User Updated", updatedUser: userUpdated });
 })
+
+
+
+//TODO [Patch] Add a method "setProfilePicture(base64IMG)" to change profile picture and save it as a base64 image
+
+// TODO [PATCH] Add a method "buyCredits([userID], amount)" to buy credits to the logged user or for a given user ID
+
+// TODO [PATCH][OWNER ONLY] Add a method "giveCredits([userID], amount)" to give credits to the logged user  or for a given user ID
+
+// TODO [PATCH] Add a method "transferCredits([userIDToSend], userIDToReceive, amount)" to transfer credits from the logged user [OWNER ONLY](or from an user) to another given user ID
+
+// TODO [PATCH] Add a method "updateInvite(productID, CustomType.ACCEPT/CustomType.REFUSE)" to accept to join a group or to refuse joining the group
+
+
 
 /**
  * @swagger
