@@ -572,8 +572,100 @@ router.patch('/giveCredits', verify, verifyAdmin, async(req, res) => {
     res.status(200).send({ message: "Credits given successfully", oldCredit: oldCredit, newCredit: userUpdated.credits });
 })
 
+/**
+ * @swagger
+ * /users/transferCredits:
+ *   patch:
+ *      description: Use to transfer your credits (do not pass userID to to it) to someone else [OWNER ONLY] or to transfer credit between two users
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: User
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - giverUserID
+ *                 - receiverUserID
+ *                 - amount
+ *                 - ownerSecret
+ *              properties:
+ *                 userID:
+ *                   type: string
+ *                 receiverUserID:
+ *                   type: string
+ *                 amount:
+ *                   type: integer
+ *                   default: 500
+ *                 ownerSecret:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfully Updated
+ *         '400':
+ *           description: User to update does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.patch('/transferCredits', verify, async(req, res) => {
+    if(!req.body.receiverUserID) return res.status(400).send("No receiver userID provided!");
+    if (req.body.amount <= 0) return res.status(400).send("You can't give 0 or less than 0 credit!");
+    let ownerMod = false;
+    let id;
+    if (req.body.userID === '' || req.body.userID === null || req.body.userID === undefined || req.body.userID === "userID"){
+        id = req.user._id;
+    }else{
+        ownerMod = true;
+        id = req.body.userID;
+    }
+    if (id === req.body.receiverUserID) return res.status(400).send("You can't transfer credits from self!");
 
-// TODO [PATCH] Add a method "transferCredits([userIDToSend], userIDToReceive, amount)" to transfer credits from the logged user [OWNER ONLY](or from an user) to another given user ID
+    const giver = await User.findOne({ _id: mongoose.Types.ObjectId(id)});
+    if (!giver) return res.status(400).send("The user you are trying to take the credits from do not exist!");
+    const receiver = await User.findOne({ _id: mongoose.Types.ObjectId(req.body.receiverUserID)});
+    if (!receiver) return res.status(400).send("The user you are trying to transfer credits to, do not exist!");
+    if (giver.credits < req.body.amount) return res.status(400).send("Can't transfer more credits than what the user possess");
+    let giverOldCredit, receiverOldCredit;
+    giverOldCredit = giver.credits;
+    receiverOldCredit = receiver.credits;
+    if (ownerMod){
+        if (req.body.ownerSecret !== process.env.OWNER_SECRET) return res.status(401).send("You need the owner secret pass to transfer credits between users!");
+        const updateTake = await giver.updateOne({
+            credits: giver.credits - req.body.amount
+        })
+        if(!updateTake) return res.status(500).send("There was an error while taking the credits from the user!");
+        const updateGive = await receiver.updateOne({
+            credits: receiver.credits + req.body.amount
+        })
+        if(!updateGive) return res.status(500).send("There was an error while giving the credits to the user!");
+        const giverUpdated = await User.findOne({ _id: mongoose.Types.ObjectId(id)});
+        const receiverUpdated = await User.findOne({ _id: mongoose.Types.ObjectId(req.body.receiverUserID)});
+        res.status(200).send({message: "Transfer Successfull !", giverOldCredit: giverOldCredit, receiverOldCredit: receiverOldCredit, giverNewCredit: giverUpdated.credits, receiverNewCredit: receiverUpdated.credits })
+    }else{
+        const updateTake = await giver.updateOne({
+            credits: giver.credits - req.body.amount
+        })
+        if(!updateTake) return res.status(500).send("There was an error while taking the credits from the user!");
+        const updateGive = await receiver.updateOne({
+            credits: receiver.credits + req.body.amount
+        })
+        if(!updateGive) return res.status(500).send("There was an error while giving the credits to the user!");
+        const giverUpdated = await User.findOne({ _id: mongoose.Types.ObjectId(id)});
+        const receiverUpdated = await User.findOne({ _id: mongoose.Types.ObjectId(req.body.receiverUserID)});
+        res.status(200).send({message: "Transfer Successfull !", giverOldCredit: giverOldCredit, receiverOldCredit: receiverOldCredit, giverNewCredit: giverUpdated.credits, receiverNewCredit: receiverUpdated.credits })
+    }
+
+
+
+
+
+    // res.status(200).send({ message: "Credits given successfully", oldCredit: oldCredit, newCredit: userUpdated.credits });
+})
+
 
 // TODO [PATCH] Add a method "updateInvite(productID, CustomType.ACCEPT/CustomType.REFUSE)" to accept to join a group or to refuse joining the group
 
