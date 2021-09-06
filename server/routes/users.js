@@ -412,6 +412,7 @@ router.patch('/', verify, async(req, res) => {
         password: req.body.password
     });
 
+    if (!updated) return res.status(500).send("An error occured while updating error, please contact the owner!")
     if (!userToUpdate) return res.status(400).send({ message: "This user does not exist or has been deleted !" })
     const userUpdated = await User.findOne({ _id: req.user._id })
     res.status(200).send({ message: "User Updated", updatedUser: userUpdated });
@@ -463,9 +464,9 @@ router.patch('/profilePicture', verify, async(req, res) => {
 
 /**
  * @swagger
- * /users/buycredits:
+ * /users/buyCredits:
  *   patch:
- *      description: Use to update your account profile picture using your token (only BASE64IMG)
+ *      description: Use to buy credits for the logged in user or for a given userID
  *      tags:
  *          - User
  *      security:
@@ -494,14 +495,13 @@ router.patch('/profilePicture', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.patch('/buycredits', verify, async(req, res) => {
+router.patch('/buyCredits', verify, async(req, res) => {
     let id, oldCredit;
     if (req.body.userID === '' || req.body.userID === null || req.body.userID === undefined || req.body.userID === "userID"){
         id = req.user._id;
     }else{
         id = req.body.userID;
     }
-    console.log(id)
     const userToUpdate = await User.findOne({ _id: mongoose.Types.ObjectId(id) })
     if (!userToUpdate) return res.status(400).send({ message: "User to update does not exist" })
     if (req.body.amount <= 0) return res.status(400).send("You can't buy 0 or less than 0 credit!");
@@ -515,10 +515,63 @@ router.patch('/buycredits', verify, async(req, res) => {
     res.status(200).send({ message: "Credits bought successfully", oldCredit: oldCredit, newCredit: userUpdated.credits });
 })
 
+/**
+ * @swagger
+ * /users/giveCredits:
+ *   patch:
+ *      description: Use to give credits for the logged in user or for a given userID [OWNER ONLY]
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: User
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - userID
+ *                 - amount
+ *                 - ownerSecret
+ *              properties:
+ *                 userID:
+ *                   type: string
+ *                 amount:
+ *                   type: integer
+ *                   default: 500
+ *                 ownerSecret:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfully Updated
+ *         '400':
+ *           description: User to update does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.patch('/giveCredits', verify, verifyAdmin, async(req, res) => {
+    if (req.body.ownerSecret !== process.env.OWNER_SECRET) return res.status(401).send("You need the owner secret pass to give credits!")
+    let id, oldCredit;
+    if (req.body.userID === '' || req.body.userID === null || req.body.userID === undefined || req.body.userID === "userID"){
+        id = req.user._id;
+    }else{
+        id = req.body.userID;
+    }
+    const userToUpdate = await User.findOne({ _id: mongoose.Types.ObjectId(id) })
+    if (!userToUpdate) return res.status(400).send({ message: "User to update does not exist" })
+    if (req.body.amount <= 0) return res.status(400).send("You can't give 0 or less than 0 credit!");
+    oldCredit = userToUpdate.credits;
+    const updated = await userToUpdate.updateOne({
+        credits: userToUpdate.credits + req.body.amount,
+    });
+    if (!updated) return res.status(500).send("An error occured during the user update (contact the owner)")
+    if (!userToUpdate) return res.status(400).send("This user does not exist or has been deleted !")
+    const userUpdated = await User.findOne({ _id: id })
+    res.status(200).send({ message: "Credits given successfully", oldCredit: oldCredit, newCredit: userUpdated.credits });
+})
 
-
-
-// TODO [PATCH][OWNER ONLY] Add a method "giveCredits([userID], amount)" to give credits to the logged user  or for a given user ID
 
 // TODO [PATCH] Add a method "transferCredits([userIDToSend], userIDToReceive, amount)" to transfer credits from the logged user [OWNER ONLY](or from an user) to another given user ID
 
