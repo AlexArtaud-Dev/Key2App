@@ -48,5 +48,5 @@ https.createServer({
     .listen(port, function () {
         console.clear();
         console.log(`${ts.toLocaleString()} - App listening on port ${port}! Go to https://localhost:${port}/v1/swagger`)
-        open(`https://localhost:${port}/v1/swagger`, {app: 'firefox'});
+        // open(`https://localhost:${port}/v1/swagger`, {app: 'firefox'});
     })

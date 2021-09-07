@@ -667,7 +667,6 @@ router.patch('/transferCredits', verify, async(req, res) => {
 })
 
 
-// TODO [PATCH] Add a method "updateInvite(productID, CustomType.ACCEPT/CustomType.REFUSE)" to accept to join a group or to refuse joining the group
 
 
 

@@ -11,12 +11,14 @@ const ProductSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
+        min: 3,
         max: 256
     },
     description: {
         type: String,
         default: "This is a basic description that you can customize",
-        required: false
+        required: false,
+        min: 10
     },
     creationDate: {
         type: Date,
