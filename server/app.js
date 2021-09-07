@@ -30,6 +30,7 @@ app.use(cors({ origin: '*' }));
 // Import Routes
 
 const usersRoute = require('./routes/users');
+const productsRoute = require('./routes/products');
 const authRoute = require('./routes/auth');
 
 
@@ -37,6 +38,7 @@ const authRoute = require('./routes/auth');
 
 app.use('/api/user', authRoute);
 app.use('/api/users', usersRoute);
+app.use('/api/products', productsRoute);
 
 // Server Listening
 https.createServer({
@@ -46,5 +48,5 @@ https.createServer({
     .listen(port, function () {
         console.clear();
         console.log(`${ts.toLocaleString()} - App listening on port ${port}! Go to https://localhost:${port}/v1/swagger`)
-        // open(`https://localhost:${port}/v1/swagger`, {app: 'firefox'});
+        open(`https://localhost:${port}/v1/swagger`, {app: 'firefox'});
     })
