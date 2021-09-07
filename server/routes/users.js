@@ -666,9 +666,65 @@ router.patch('/transferCredits', verify, async(req, res) => {
     // res.status(200).send({ message: "Credits given successfully", oldCredit: oldCredit, newCredit: userUpdated.credits });
 })
 
+/**
+ * @swagger
+ * /users/updateInvite:
+ *   patch:
+ *      description: Use to update the invitation to a product
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: User
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - validation
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 validation:
+ *                   type: boolean
+ *      responses:
+ *         '200':
+ *           description: Successfully Updated
+ *         '400':
+ *           description: User to update does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.patch('/updateInvite', verify, async(req, res) => {
+    if(!req.body.productID) return res.status(400).send("No product ID provided!");
+    if(req.body.validation !== true && req.body.validation !== false) return res.status(400).send("You did not provide correct type of validation, need to be a boolean!");
 
+    const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.body.productID)});
+    if (!product) return res.status(400).send("The product ID that you provided is not linked to an existing product!")
 
+    const user = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if (!user) return res.status(400).send("The user that tried to validate an invitation does not exist!")
 
+    if (!user.pendingInvites.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(400).send("You were not invited to this product!")
+    if (req.body.validation){
+        user.pendingInvites.pull(mongoose.Types.ObjectId(product._id));
+        user.isPartOfProducts.push(mongoose.Types.ObjectId(product._id));
+        const update = await user.save();
+        if (!update) return res.status(500).send("An error occurred when validating the invitation, if it happens again, contact the administrator!")
+        res.status(200).send("Successfully accepted invite!");
+    }else{
+        user.pendingInvites.pull(mongoose.Types.ObjectId(product._id));
+        const update = await user.save();
+        if (!update) return res.status(500).send("An error occurred when declining the invitation, if it happens again, contact the administrator!")
+        product.members.pull(mongoose.Types.ObjectId(user._id));
+        const updateProduct = await product.save();
+        if (!updateProduct) return res.status(500).send("An error occurred when declining the invitation, if it happens again, contact the administrator!")
+        res.status(200).send("Successfully declined invite!");
+    }
+})
 
 /**
  * @swagger

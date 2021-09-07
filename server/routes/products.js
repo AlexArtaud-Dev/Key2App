@@ -70,6 +70,8 @@ router.get('/:productID', verify, async(req, res) => {
  */
 router.post('/create', verify, async(req, res) => {
     if(!req.body.name)return res.status(400).send("No product name provided!");
+    const user = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if (!user) res.status(400).send("The user that tried to create the product do not exist!");
     const newProduct = new Product({
         ownerID: req.user._id,
         name: req.body.name
@@ -77,6 +79,9 @@ router.post('/create', verify, async(req, res) => {
     await newProduct.save();
     const checkProduct = await Product.findOne({ownerID: req.user._id, name: req.body.name});
     if (!checkProduct) return res.status(500).send("An error occurred while creating your product, if it happens again, contact the administrator!");
+    user.ownedProducts.push(mongoose.Types.ObjectId(checkProduct._id));
+    const updateUser = await user.save();
+    if (!updateUser) return res.status(500).send("An error occurred while adding the product to the user owned product list, if it happens again, contact the administrator!");
     res.status(200).send({message: "Product Creation Successfull", product: checkProduct});
 })
 
@@ -183,17 +188,120 @@ router.patch('/changeDesc', verify, async(req, res) => {
     res.status(200).send({message: "Product Description Updated", newProduct: newProduct});
 })
 
+/**
+ * @swagger
+ * /products/invite:
+ *   patch:
+ *      description: Use to invite an user to a product
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - userID
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 userID:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The product does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.patch('/invite', verify, async(req, res) => {
+    if(!req.body.productID) return res.status(400).send("No product ID provided!");
+    if(!req.body.userID) return res.status(400).send("You did not provide the userID to invite!");
 
+    const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.body.productID)});
+    if(!product) return res.status(400).send("This product does not exist or was deleted!");
+    if (product.ownerID.toString() !== req.user._id) return res.status(401).send("You can't invite an user to a product you do not own!")
+    if (product.members.includes(req.body.userID)) return res.status(400).send("The user is already part of the product!")
+
+    product.members.push(mongoose.Types.ObjectId(req.body.userID));
+    const update = await product.save()
+    if (!update) return res.status(500).send("An error occurred while updating the product member list, if it persist, contact the administrator!");
+
+    const user = await User.findOne({_id: mongoose.Types.ObjectId(req.body.userID)});
+    user.pendingInvites.push(mongoose.Types.ObjectId(product._id));
+    const updateUser = await user.save();
+    if (!updateUser) return res.status(500).send("An error occurred while updating the user pending invite list, if it persist, contact the administrator!");
+
+    res.status(200).send("User added to the product member list");
+})
+
+/**
+ * @swagger
+ * /products/remove:
+ *   patch:
+ *      description: Use to remive an user from a product
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - userID
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 userID:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The product does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.patch('/remove', verify, async(req, res) => {
+    if(!req.body.productID) return res.status(400).send("No product ID provided!");
+    if(!req.body.userID) return res.status(400).send("You did not provide the userID to invite!");
+
+    const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.body.productID)});
+    if(!product) return res.status(400).send("This product does not exist or was deleted!");
+    if (product.ownerID.toString() !== req.user._id) return res.status(401).send("You can't remove an user from a product you do not own!")
+    if (!product.members.includes(req.body.userID)) return res.status(400).send("The user is already not a part of the product!")
+
+    product.members.pull(mongoose.Types.ObjectId(req.body.userID));
+    const update = await product.save()
+    if (!update) return res.status(500).send("An error occurred while updating the product member list, if it persist, contact the administrator!");
+
+    const user = await User.findOne({_id: mongoose.Types.ObjectId(req.body.userID)});
+    if (user.pendingInvites.includes(mongoose.Types.ObjectId(product._id))){
+        user.pendingInvites.pull(mongoose.Types.ObjectId(product._id));
+        const updateUser = await user.save();
+        if (!updateUser) return res.status(500).send("An error occurred while updating the user pending invite list, if it persist, contact the administrator!");
+    }
+
+
+    res.status(200).send("User removed from the product member list");
+})
 
 
 
 // TODO [POST] Add a method "createKey(productID, [userID])" to create a key for the product (also create it inside key db)
 
 // TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
-
-// TODO [PATCH] Add a method "inviteUser(productID, userID)" to invite an user to the product
-
-// TODO [DELETE] Add a method "removeUser(productID, userID)" to remove an user from the product
 
 // TODO [DELETE] Add a method "deleteKey(productID, keyID)" to delete a key from a product (also delete from key db)
 
