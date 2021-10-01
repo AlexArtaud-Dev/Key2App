@@ -336,6 +336,8 @@ router.patch('/remove', verify, async(req, res) => {
 router.post('/createKey', verify, async(req, res) => {
     const productToUpdate = await Product.findOne({_id: req.body.productID});
     if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
+    const owner = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if(!owner) return res.status(400).send("The userID you used do not exist or was deleted!");
     if (productToUpdate.ownerID.toString() !== req.user._id) return res.status(401).send("You can't create a key of a product you do not own!");
     const key = uuidKey.create();
     let newKey;
@@ -360,6 +362,12 @@ router.post('/createKey', verify, async(req, res) => {
     if (!productSavedStatus) {
         await Key.deleteOne({_id: savedStatus._id});
         return res.status(500).send("Internal Server Error : An error happened when adding the key to the product, contact the owner")
+    }
+    owner.credits = owner.credits - 10;
+    const savedOwner = await owner.save();
+    if (!savedOwner) {
+        await Key.deleteOne({_id: savedStatus._id});
+        return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
     }
     res.status(200).send("Key successfully created!");
 })
