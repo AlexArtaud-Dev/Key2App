@@ -302,7 +302,7 @@ router.patch('/remove', verify, async(req, res) => {
  * @swagger
  * /products/createKey:
  *   post:
- *      description: Use to create a product key
+ *      description: Use to create a product key (don't add a userID to create for your own and add a userID to create for someone else [ADMIN ONLY])
  *      tags:
  *          - Product
  *      security:
@@ -334,8 +334,9 @@ router.patch('/remove', verify, async(req, res) => {
  *           description: Internal servor error
  */
 router.post('/createKey', verify, async(req, res) => {
+    if (!req.body.productID) return res.status(400).send("No product ID provided!");
+    if (req.body.days && isNaN(req.body.days)) return res.status(400).send("The days you provided are not an integer (eq : 1-2-3) !");
     let userID;
-
     const productToUpdate = await Product.findOne({_id: req.body.productID});
     if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
     const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
@@ -367,7 +368,7 @@ router.post('/createKey', verify, async(req, res) => {
             UUID: key.uuid
         })
     }
-    if (!owner.isPartOfProducts.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(401).send("You cannot create a key for someone that is not part of the product");
+    if (!owner.isPartOfProducts.includes(mongoose.Types.ObjectId(req.body.productID)) && !owner.ownedProducts.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(401).send("You cannot create a key for someone that is not part of the product");
     const savedStatus = await newKey.save();
     if (!savedStatus) return res.status(500).send("Internal Server Error : An error happened when creating the key, contact the owner!");
     productToUpdate.keys.push(mongoose.Types.ObjectId(savedStatus._id));
@@ -398,6 +399,63 @@ router.post('/createKey', verify, async(req, res) => {
     res.status(200).send("Key successfully created!");
 })
 
+/**
+ * @swagger
+ * /products/clearKeys:
+ *   delete:
+ *      description: Use to clear all the keys from a product
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The product does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.delete('/clearKeys', verify, async(req, res) => {
+    if (!req.body.productID) return res.status(400).send("No product ID provided");
+    const product = await Product.findOne({ _id: mongoose.Types.ObjectId(req.body.productID)});
+    if (!product) return res.status(400).send("The product does not exist or was deleted!");
+    const requester = await User.findOne({_id: req.user._id});
+    if (!requester) return res.status(400).send("The user that tried to clear keys does not exist or was deleted!");
+    if (product.ownerID.toString() === req.user._id || requester.authority === 10){
+        await Promise.all(product.keys.map(async (key) => {
+            const keyToDelete = await Key.findOne({_id: key})
+            const owner = await User.findOne({_id: keyToDelete.creatorID});
+            if (keyToDelete && owner){
+                if (keyToDelete.used === true){
+                    owner.credits = owner.credits + 10;
+                    await owner.save();
+                    product.keys.pull(mongoose.Types.ObjectId(keyToDelete._id));
+                    await keyToDelete.delete();
+                }else{
+                    product.keys.pull(mongoose.Types.ObjectId(keyToDelete._id));
+                    await keyToDelete.delete();
+                }
+            }
+        }))
+    }else{
+        return res.status(401).send("You are not the owner or you don't have administrator permissions to clear thoses product keys!");
+    }
+    await product.save();
+    res.status(200).send("Keys successfully cleared from product!");
+})
 
 // TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
 
