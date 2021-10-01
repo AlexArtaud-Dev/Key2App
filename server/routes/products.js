@@ -5,6 +5,7 @@ const bcrypt = require('bcryptjs');
 const verify = require('./middlewares/verifyToken');
 const verifyAdmin = require('./middlewares/verifyAdminToken');
 const { User, Key, Product } = require("../models/models");
+const uuidKey = require("uuid-apikey");
 
 
 /**
@@ -245,7 +246,7 @@ router.patch('/invite', verify, async(req, res) => {
  * @swagger
  * /products/remove:
  *   patch:
- *      description: Use to remive an user from a product
+ *      description: Use to remove an user from a product
  *      tags:
  *          - Product
  *      security:
@@ -297,9 +298,72 @@ router.patch('/remove', verify, async(req, res) => {
     res.status(200).send("User removed from the product member list");
 })
 
+/**
+ * @swagger
+ * /products/createKey:
+ *   post:
+ *      description: Use to create a product key
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - userID
+ *                 - days
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 userID:
+ *                   type: string
+ *                 days:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The product does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.post('/createKey', verify, async(req, res) => {
+    const productToUpdate = await Product.findOne({_id: req.body.productID});
+    if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
+    if (productToUpdate.ownerID.toString() !== req.user._id) return res.status(401).send("You can't create a key of a product you do not own!");
+    const key = uuidKey.create();
+    let newKey;
+    if (req.body.days){
+        newKey = new Key({
+            productID: mongoose.Types.ObjectId(req.body.productID),
+            creatorID: mongoose.Types.ObjectId(req.user._id),
+            expirationDate: (Date.now() + 86400000 * req.body.days),
+            UUID: key.uuid
+        })
+    }else{
+        newKey = new Key({
+            productID: mongoose.Types.ObjectId(req.body.productID),
+            creatorID: mongoose.Types.ObjectId(req.user._id),
+            UUID: key.uuid
+        })
+    }
+    const savedStatus = await newKey.save();
+    if (!savedStatus) return res.status(500).send("Internal Server Error : An error happened when creating the key, contact the owner!");
+    productToUpdate.keys.push(mongoose.Types.ObjectId(savedStatus._id));
+    const productSavedStatus = await productToUpdate.save();
+    if (!productSavedStatus) {
+        await Key.deleteOne({_id: savedStatus._id});
+        return res.status(500).send("Internal Server Error : An error happened when adding the key to the product, contact the owner")
+    }
+    res.status(200).send("Key successfully created!");
+})
 
-
-// TODO [POST] Add a method "createKey(productID, [userID])" to create a key for the product (also create it inside key db)
 
 // TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
 

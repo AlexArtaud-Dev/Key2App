@@ -131,7 +131,7 @@ setTimeout(async () => {
                                                                         username: username
                                                                     })
 
-                                                                    newUser.save()
+                                                                    await newUser.save()
                                                                         .then(r => console.log("Super Admin Account successfully created"))
                                                                         .catch(err => console.log(err))
                                                                     let userOwner = await User.findOne({email: email, password: hashPassword, username: username});
