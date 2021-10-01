@@ -521,8 +521,6 @@ router.delete('/deleteKey', verify, async(req, res) => {
 
 // TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
 
-// TODO [DELETE] Add a method "deleteKey(productID, keyID)" to delete a key from a product (also delete from key db) -> Product Owner/Key Owner/ADMIN
-
 // TODO [DELETE] Add a method "deleteProduct(productID)" to delete a product with all the linked keys
 
 
