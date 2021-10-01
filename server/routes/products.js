@@ -457,11 +457,71 @@ router.delete('/clearKeys', verify, async(req, res) => {
     res.status(200).send("Keys successfully cleared from product!");
 })
 
+/**
+ * @swagger
+ * /products/deleteKey:
+ *   delete:
+ *      description: Use to delete a key
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - keyID
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 keyID:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The key does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.delete('/deleteKey', verify, async(req, res) => {
+    if (!req.body.productID) return res.status(400).send("Product ID not provided!");
+    if (!req.body.keyID) return res.status(400).send("Key ID not provided!");
+    const productToUpdate = await Product.findOne({_id : mongoose.Types.ObjectId(req.body.productID)});
+    if(!productToUpdate) return res.status(400).send("The product does not exist or was deleted!");
+    const keyToDelete = await Key.findOne({_id: mongoose.Types.ObjectId(req.body.keyID)})
+    if(!keyToDelete) return res.status(400).send("The key does not exist or was deleted!");
+    const owner = await User.findOne({_id: keyToDelete.creatorID});
+    const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if(!requester) return res.status(400).send("The requester does not exist!");
+
+    if (req.user._id !== productToUpdate.ownerID.toString() && req.user._id !== keyToDelete.creatorID && requester.authority !== 10) return res.status(401).send("You cannot delete a key if you are not the product owner, the key creator or and administrator");
+    if (!keyToDelete.used && owner){
+        owner.credits = owner.credits + 10;
+        await owner.save();
+        productToUpdate.keys.pull(keyToDelete._id);
+        await productToUpdate.save();
+        const keyDeletionStatus = await keyToDelete.delete();
+        if(!keyDeletionStatus) return res.status(500).send("Internal Server Error : Could not delete the key, contact the owner!");
+    }else{
+        productToUpdate.keys.pull(keyToDelete._id);
+        await productToUpdate.save();
+        const keyDeletionStatus = await keyToDelete.delete();
+        if(!keyDeletionStatus) return res.status(500).send("Internal Server Error : Could not delete the key, contact the owner!");
+    }
+
+    res.status(200).send("Key successfully deleted!");
+})
+
+
 // TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
 
-// TODO [DELETE] Add a method "deleteKey(productID, keyID)" to delete a key from a product (also delete from key db)
-
-// TODO [DELETE] Add a method "clearKeys(productID)" to clear all the key from the product (Optional : add a system so that unused key are refunded, need to set a key price)(also delete from key db)
+// TODO [DELETE] Add a method "deleteKey(productID, keyID)" to delete a key from a product (also delete from key db) -> Product Owner/Key Owner/ADMIN
 
 // TODO [DELETE] Add a method "deleteProduct(productID)" to delete a product with all the linked keys
 
