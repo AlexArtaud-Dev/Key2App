@@ -334,9 +334,21 @@ router.patch('/remove', verify, async(req, res) => {
  *           description: Internal servor error
  */
 router.post('/createKey', verify, async(req, res) => {
+    let userID;
+
     const productToUpdate = await Product.findOne({_id: req.body.productID});
     if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
-    const owner = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if (req.body.userID && requester){
+        if(requester.authority === 10){
+            userID = req.body.userID;
+        }else{
+            return res.status(401).send("You cannot create a key for someone else if you are not administrator!")
+        }
+    }else{
+        userID = req.user._id;
+    }
+    const owner = await User.findOne({_id: mongoose.Types.ObjectId(userID)});
     if(!owner) return res.status(400).send("The userID you used do not exist or was deleted!");
     if (productToUpdate.ownerID.toString() !== req.user._id) return res.status(401).send("You can't create a key of a product you do not own!");
     const key = uuidKey.create();
@@ -344,17 +356,18 @@ router.post('/createKey', verify, async(req, res) => {
     if (req.body.days){
         newKey = new Key({
             productID: mongoose.Types.ObjectId(req.body.productID),
-            creatorID: mongoose.Types.ObjectId(req.user._id),
+            creatorID: mongoose.Types.ObjectId(userID),
             expirationDate: (Date.now() + 86400000 * req.body.days),
             UUID: key.uuid
         })
     }else{
         newKey = new Key({
             productID: mongoose.Types.ObjectId(req.body.productID),
-            creatorID: mongoose.Types.ObjectId(req.user._id),
+            creatorID: mongoose.Types.ObjectId(userID),
             UUID: key.uuid
         })
     }
+    if (!owner.isPartOfProducts.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(401).send("You cannot create a key for someone that is not part of the product");
     const savedStatus = await newKey.save();
     if (!savedStatus) return res.status(500).send("Internal Server Error : An error happened when creating the key, contact the owner!");
     productToUpdate.keys.push(mongoose.Types.ObjectId(savedStatus._id));
@@ -363,12 +376,25 @@ router.post('/createKey', verify, async(req, res) => {
         await Key.deleteOne({_id: savedStatus._id});
         return res.status(500).send("Internal Server Error : An error happened when adding the key to the product, contact the owner")
     }
-    owner.credits = owner.credits - 10;
-    const savedOwner = await owner.save();
-    if (!savedOwner) {
-        await Key.deleteOne({_id: savedStatus._id});
-        return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
+
+    if (req.body.userID && requester){
+        if (requester.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
+        requester.credits = requester.credits - 10;
+        const savedRequester = await requester.save();
+        if (!savedRequester) {
+            await Key.deleteOne({_id: savedStatus._id});
+            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
+        }
+    }else{
+        if (owner.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
+        owner.credits = owner.credits - 10;
+        const savedOwner = await owner.save();
+        if (!savedOwner) {
+            await Key.deleteOne({_id: savedStatus._id});
+            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
+        }
     }
+
     res.status(200).send("Key successfully created!");
 })
 
