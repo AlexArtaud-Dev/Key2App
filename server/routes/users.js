@@ -751,7 +751,7 @@ router.delete('/', verify, async(req, res) => {
     user.delete();
     res.status(200).send({ message: "Deleted User!" })
 })
-
+//TODO Make in sort that when you delete a user, it deletes all ownedProducts and linked keys
 /**
  * @swagger
  * /users/{id}/{adminSecretPassword}:
@@ -807,4 +807,5 @@ router.delete('/:id/:adminSecretPassword', verify, verifyAdmin, async(req, res) 
 
 })
 
+//TODO add get pending invites
 module.exports = router;
