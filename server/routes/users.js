@@ -35,6 +35,31 @@ router.get('/', verify, async(req, res) => {
 
 /**
  * @swagger
+ * /users/pendingInvites:
+ *   get:
+ *      description: Use to get user pendingInvites to product from auth token
+ *      tags:
+ *          - User
+ *      security:
+ *          - Bearer: []
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: User does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.get('/pendingInvites', verify, async(req, res) => {
+    const user = await User.findOne({ _id: mongoose.Types.ObjectId(req.user._id) })
+    if (!user) return res.status(400).send({ message: "User does not exist" });
+    res.status(200).send(user.pendingInvites);
+})
+
+/**
+ * @swagger
  * /users/invites/{userID}:
  *   get:
  *      description: Use to get user pending products invites from auth-token | or from a given userID [ADMIN ONLY]
@@ -807,5 +832,4 @@ router.delete('/:id/:adminSecretPassword', verify, verifyAdmin, async(req, res) 
 
 })
 
-//TODO add get pending invites
 module.exports = router;

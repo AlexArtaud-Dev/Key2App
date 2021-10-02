@@ -88,6 +88,107 @@ router.post('/create', verify, async(req, res) => {
 
 /**
  * @swagger
+ * /products/createKey:
+ *   post:
+ *      description: Use to create a product key (don't add a userID to create for your own and add a userID to create for someone else [ADMIN ONLY])
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: body
+ *            name: Product
+ *            schema:
+ *              type: object
+ *              required:
+ *                 - productID
+ *                 - userID
+ *                 - days
+ *              properties:
+ *                 productID:
+ *                   type: string
+ *                 userID:
+ *                   type: string
+ *                 days:
+ *                   type: string
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: The product does not exist or was deleted / The user does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.post('/createKey', verify, async(req, res) => {
+    if (!req.body.productID) return res.status(400).send("No product ID provided!");
+    if (req.body.days && isNaN(req.body.days)) return res.status(400).send("The days you provided are not an integer (eq : 1-2-3) !");
+    let userID;
+    const productToUpdate = await Product.findOne({_id: req.body.productID});
+    if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
+    const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
+    if (req.body.userID && requester){
+        if(requester.authority === 10){
+            userID = req.body.userID;
+        }else{
+            return res.status(401).send("You cannot create a key for someone else if you are not administrator!")
+        }
+    }else{
+        userID = req.user._id;
+    }
+    const owner = await User.findOne({_id: mongoose.Types.ObjectId(userID)});
+    if(!owner) return res.status(400).send("The userID you used do not exist or was deleted!");
+    if (productToUpdate.ownerID.toString() !== req.user._id) return res.status(401).send("You can't create a key of a product you do not own!");
+    const key = uuidKey.create();
+    let newKey;
+    if (req.body.days){
+        newKey = new Key({
+            productID: mongoose.Types.ObjectId(req.body.productID),
+            creatorID: mongoose.Types.ObjectId(userID),
+            expirationDate: (Date.now() + 86400000 * req.body.days),
+            UUID: key.uuid
+        })
+    }else{
+        newKey = new Key({
+            productID: mongoose.Types.ObjectId(req.body.productID),
+            creatorID: mongoose.Types.ObjectId(userID),
+            UUID: key.uuid
+        })
+    }
+    if (!owner.isPartOfProducts.includes(mongoose.Types.ObjectId(req.body.productID)) && !owner.ownedProducts.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(401).send("You cannot create a key for someone that is not part of the product");
+    const savedStatus = await newKey.save();
+    if (!savedStatus) return res.status(500).send("Internal Server Error : An error happened when creating the key, contact the owner!");
+    productToUpdate.keys.push(mongoose.Types.ObjectId(savedStatus._id));
+    const productSavedStatus = await productToUpdate.save();
+    if (!productSavedStatus) {
+        await Key.deleteOne({_id: savedStatus._id});
+        return res.status(500).send("Internal Server Error : An error happened when adding the key to the product, contact the owner")
+    }
+
+    if (req.body.userID && requester){
+        if (requester.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
+        requester.credits = requester.credits - 10;
+        const savedRequester = await requester.save();
+        if (!savedRequester) {
+            await Key.deleteOne({_id: savedStatus._id});
+            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
+        }
+    }else{
+        if (owner.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
+        owner.credits = owner.credits - 10;
+        const savedOwner = await owner.save();
+        if (!savedOwner) {
+            await Key.deleteOne({_id: savedStatus._id});
+            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
+        }
+    }
+
+    res.status(200).send("Key successfully created!");
+})
+
+/**
+ * @swagger
  * /products/changeName:
  *   patch:
  *      description: Use to change a product name
@@ -300,9 +401,9 @@ router.patch('/remove', verify, async(req, res) => {
 
 /**
  * @swagger
- * /products/createKey:
- *   post:
- *      description: Use to create a product key (don't add a userID to create for your own and add a userID to create for someone else [ADMIN ONLY])
+ * /products/transferProduct:
+ *   patch:
+ *      description: Use to transfer a product between users (use firstUser to transfer to another member or use first and second to transfer between members [ADMIN ONLY]
  *      tags:
  *          - Product
  *      security:
@@ -314,14 +415,14 @@ router.patch('/remove', verify, async(req, res) => {
  *              type: object
  *              required:
  *                 - productID
- *                 - userID
- *                 - days
+ *                 - firstUser
+ *                 - secondUser
  *              properties:
  *                 productID:
  *                   type: string
- *                 userID:
+ *                 firstUser:
  *                   type: string
- *                 days:
+ *                 secondUser:
  *                   type: string
  *      responses:
  *         '200':
@@ -333,70 +434,56 @@ router.patch('/remove', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.post('/createKey', verify, async(req, res) => {
-    if (!req.body.productID) return res.status(400).send("No product ID provided!");
-    if (req.body.days && isNaN(req.body.days)) return res.status(400).send("The days you provided are not an integer (eq : 1-2-3) !");
-    let userID;
-    const productToUpdate = await Product.findOne({_id: req.body.productID});
-    if (!productToUpdate) return res.status(400).send("The product does not exist or was deleted!")
+router.patch('/transferProduct', verify, async(req, res) => {
+    let secondUser;
+    if (!req.body.productID) return res.status(400).send("Product ID not provided!");
+    if (!req.body.firstUser) return res.status(400).send("First user not provided!");
+    const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.body.productID)});
+    if(!product) return res.status(400).send("The product you provided does not exist or was deleted");
+    const firstUser = await User.findOne({_id: mongoose.Types.ObjectId(req.body.firstUser)});
+    if(!firstUser) return res.status(400).send("The first user you provided does not exist or was deleted");
     const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
-    if (req.body.userID && requester){
-        if(requester.authority === 10){
-            userID = req.body.userID;
-        }else{
-            return res.status(401).send("You cannot create a key for someone else if you are not administrator!")
-        }
+    if (!requester) return res.status(400).send("The requester does not exist!");
+    if (req.body.secondUser){
+        secondUser = await User.findOne({_id: mongoose.Types.ObjectId(req.body.secondUser)});
+        if (!secondUser) return res.status(400).send("The second user you provided does not exist");
+    }
+    if (req.body.firstUser && req.body.secondUser){
+        if (requester.authority !== 10) return res.status(401).send("You can't transfer a product between users if you are not administrator!");
+        if (product.ownerID.toString() !== req.body.firstUser) return res.status(401).send("The first user you provided is not the owner of the product!");
+        if (!secondUser.isPartOfProducts.includes(product._id)) return res.status(401).send("You cannot transfer ownership of a product to a user that is not part of the product!");
+        product.ownerID = secondUser._id;
+        product.members.pull(secondUser._id);
+        product.members.push(firstUser._id);
+        const savedProduct = await product.save();
+        if(!savedProduct) return res.status(500).send("Internal Server Error : Could not update the product during the transfer of ownership, contact the owner!");
+        firstUser.ownedProducts.pull(product._id);
+        firstUser.isPartOfProducts.push(product._id);
+        const savedFirstUser = await firstUser.save();
+        if(!savedFirstUser) return res.status(500).send("Internal Server Error : Could not update the first user during the transfer of ownership, contact the owner!");
+        secondUser.ownedProducts.push(product._id);
+        secondUser.isPartOfProducts.pull(product._id);
+        const savedSecondUser = await secondUser.save();
+        if(!savedSecondUser) return res.status(500).send("Internal Server Error : Could not update the second user during the transfer of ownership, contact the owner!");
+        res.status(200).send("Product transfered successfully!");
     }else{
-        userID = req.user._id;
-    }
-    const owner = await User.findOne({_id: mongoose.Types.ObjectId(userID)});
-    if(!owner) return res.status(400).send("The userID you used do not exist or was deleted!");
-    if (productToUpdate.ownerID.toString() !== req.user._id) return res.status(401).send("You can't create a key of a product you do not own!");
-    const key = uuidKey.create();
-    let newKey;
-    if (req.body.days){
-        newKey = new Key({
-            productID: mongoose.Types.ObjectId(req.body.productID),
-            creatorID: mongoose.Types.ObjectId(userID),
-            expirationDate: (Date.now() + 86400000 * req.body.days),
-            UUID: key.uuid
-        })
-    }else{
-        newKey = new Key({
-            productID: mongoose.Types.ObjectId(req.body.productID),
-            creatorID: mongoose.Types.ObjectId(userID),
-            UUID: key.uuid
-        })
-    }
-    if (!owner.isPartOfProducts.includes(mongoose.Types.ObjectId(req.body.productID)) && !owner.ownedProducts.includes(mongoose.Types.ObjectId(req.body.productID))) return res.status(401).send("You cannot create a key for someone that is not part of the product");
-    const savedStatus = await newKey.save();
-    if (!savedStatus) return res.status(500).send("Internal Server Error : An error happened when creating the key, contact the owner!");
-    productToUpdate.keys.push(mongoose.Types.ObjectId(savedStatus._id));
-    const productSavedStatus = await productToUpdate.save();
-    if (!productSavedStatus) {
-        await Key.deleteOne({_id: savedStatus._id});
-        return res.status(500).send("Internal Server Error : An error happened when adding the key to the product, contact the owner")
-    }
-
-    if (req.body.userID && requester){
-        if (requester.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
-        requester.credits = requester.credits - 10;
+        if (requester._id.toString() !== product.ownerID.toString()) return res.status(401).send("You are not the owner of the product, so you can't transfer this product!");
+        if (!firstUser.isPartOfProducts.includes(product._id)) return res.status(401).send("You cannot transfer ownership of a product to a user that is not part of the product!");
+        product.ownerID = firstUser._id;
+        product.members.pull(firstUser._id);
+        product.members.push(requester._id);
+        const savedProduct = await product.save();
+        if(!savedProduct) return res.status(500).send("Internal Server Error : Could not update the product during the transfer of ownership, contact the owner!");
+        requester.ownedProducts.pull(product._id);
+        requester.isPartOfProducts.push(product._id);
         const savedRequester = await requester.save();
-        if (!savedRequester) {
-            await Key.deleteOne({_id: savedStatus._id});
-            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
-        }
-    }else{
-        if (owner.credits < 10) return res.status(400).send("You can't buy a key if you don't have enough credit!");
-        owner.credits = owner.credits - 10;
-        const savedOwner = await owner.save();
-        if (!savedOwner) {
-            await Key.deleteOne({_id: savedStatus._id});
-            return res.status(500).send("Internal Server Error : An error happened when using the user credits, contact the owner");
-        }
+        if(!savedRequester) return res.status(500).send("Internal Server Error : Could not update the requester during the transfer of ownership, contact the owner!");
+        firstUser.ownedProducts.push(product._id);
+        firstUser.isPartOfProducts.pull(product._id);
+        const savedFirstUser = await firstUser.save();
+        if(!savedFirstUser) return res.status(500).send("Internal Server Error : Could not update the first user during the transfer of ownership, contact the owner!");
+        res.status(200).send("Product transfered successfully!");
     }
-
-    res.status(200).send("Key successfully created!");
 })
 
 /**
@@ -520,9 +607,9 @@ router.delete('/deleteKey', verify, async(req, res) => {
 
 /**
  * @swagger
- * /products/deleteKey:
+ * /products/deleteProduct:
  *   delete:
- *      description: Use to delete a key
+ *      description: Use to delete a product
  *      tags:
  *          - Product
  *      security:
@@ -534,11 +621,8 @@ router.delete('/deleteKey', verify, async(req, res) => {
  *              type: object
  *              required:
  *                 - productID
- *                 - keyID
  *              properties:
  *                 productID:
- *                   type: string
- *                 keyID:
  *                   type: string
  *      responses:
  *         '200':
@@ -550,128 +634,72 @@ router.delete('/deleteKey', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.delete('/deleteKey', verify, async(req, res) => {
+router.delete('/deleteProduct', verify, async(req, res) => {
     if (!req.body.productID) return res.status(400).send("Product ID not provided!");
-    if (!req.body.keyID) return res.status(400).send("Key ID not provided!");
-    const productToUpdate = await Product.findOne({_id : mongoose.Types.ObjectId(req.body.productID)});
-    if(!productToUpdate) return res.status(400).send("The product does not exist or was deleted!");
-    const keyToDelete = await Key.findOne({_id: mongoose.Types.ObjectId(req.body.keyID)})
-    if(!keyToDelete) return res.status(400).send("The key does not exist or was deleted!");
-    const owner = await User.findOne({_id: keyToDelete.creatorID});
-    const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
-    if(!requester) return res.status(400).send("The requester does not exist!");
-
-    if (req.user._id !== productToUpdate.ownerID.toString() && req.user._id !== keyToDelete.creatorID && requester.authority !== 10) return res.status(401).send("You cannot delete a key if you are not the product owner, the key creator or and administrator");
-    if (!keyToDelete.used && owner){
-        owner.credits = owner.credits + 10;
-        await owner.save();
-        productToUpdate.keys.pull(keyToDelete._id);
-        await productToUpdate.save();
-        const keyDeletionStatus = await keyToDelete.delete();
-        if(!keyDeletionStatus) return res.status(500).send("Internal Server Error : Could not delete the key, contact the owner!");
-    }else{
-        productToUpdate.keys.pull(keyToDelete._id);
-        await productToUpdate.save();
-        const keyDeletionStatus = await keyToDelete.delete();
-        if(!keyDeletionStatus) return res.status(500).send("Internal Server Error : Could not delete the key, contact the owner!");
-    }
-
-    res.status(200).send("Key successfully deleted!");
-})
-
-/**
- * @swagger
- * /products/transferProduct:
- *   patch:
- *      description: Use to transfer a product between users (use firstUser to transfer to another member or use first and second to transfer between members [ADMIN ONLY]
- *      tags:
- *          - Product
- *      security:
- *          - Bearer: []
- *      parameters:
- *          - in: body
- *            name: Product
- *            schema:
- *              type: object
- *              required:
- *                 - productID
- *                 - firstUser
- *                 - secondUser
- *              properties:
- *                 productID:
- *                   type: string
- *                 firstUser:
- *                   type: string
- *                 secondUser:
- *                   type: string
- *      responses:
- *         '200':
- *           description: Successfull Request
- *         '400':
- *           description: The product does not exist or was deleted / The user does not exist
- *         '401':
- *           description: Unauthorized
- *         '500':
- *           description: Internal servor error
- */
-router.patch('/transferProduct', verify, async(req, res) => {
-    let secondUser;
-    if (!req.body.productID) return res.status(400).send("Product ID not provided!");
-    if (!req.body.firstUser) return res.status(400).send("First user not provided!");
     const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.body.productID)});
-    if(!product) return res.status(400).send("The product you provided does not exist or was deleted");
-    const firstUser = await User.findOne({_id: mongoose.Types.ObjectId(req.body.firstUser)});
-    if(!firstUser) return res.status(400).send("The first user you provided does not exist or was deleted");
+    if (!product) return res.status(400).send("The product you provided does not exist or was deleted!");
     const requester = await User.findOne({_id: mongoose.Types.ObjectId(req.user._id)});
-    if (!requester) return res.status(400).send("The requester does not exist!");
-    if (req.body.secondUser){
-        secondUser = await User.findOne({_id: mongoose.Types.ObjectId(req.body.secondUser)});
-        if (!secondUser) return res.status(400).send("The second user you provided does not exist");
-    }
-    if (req.body.firstUser && req.body.secondUser){
-        if (requester.authority !== 10) return res.status(401).send("You can't transfer a product between users if you are not administrator!");
-        if (product.ownerID.toString() !== req.body.firstUser) return res.status(401).send("The first user you provided is not the owner of the product!");
-        if (!secondUser.isPartOfProducts.includes(product._id)) return res.status(401).send("You cannot transfer ownership of a product to a user that is not part of the product!");
-        product.ownerID = secondUser._id;
-        product.members.pull(secondUser._id);
-        product.members.push(firstUser._id);
-        const savedProduct = await product.save();
-        if(!savedProduct) return res.status(500).send("Internal Server Error : Could not update the product during the transfer of ownership, contact the owner!");
-        firstUser.ownedProducts.pull(product._id);
-        firstUser.isPartOfProducts.push(product._id);
-        const savedFirstUser = await firstUser.save();
-        if(!savedFirstUser) return res.status(500).send("Internal Server Error : Could not update the first user during the transfer of ownership, contact the owner!");
-        secondUser.ownedProducts.push(product._id);
-        secondUser.isPartOfProducts.pull(product._id);
-        const savedSecondUser = await secondUser.save();
-        if(!savedSecondUser) return res.status(500).send("Internal Server Error : Could not update the second user during the transfer of ownership, contact the owner!");
-        res.status(200).send("Product transfered successfully!");
-    }else{
-        if (requester._id.toString() !== product.ownerID.toString()) return res.status(401).send("You are not the owner of the product, so you can't transfer this product!");
-        if (!firstUser.isPartOfProducts.includes(product._id)) return res.status(401).send("You cannot transfer ownership of a product to a user that is not part of the product!");
-        product.ownerID = firstUser._id;
-        product.members.pull(firstUser._id);
-        product.members.push(requester._id);
-        const savedProduct = await product.save();
-        if(!savedProduct) return res.status(500).send("Internal Server Error : Could not update the product during the transfer of ownership, contact the owner!");
+    if (!requester) return res.status(400).send("The requester does not exist or was deleted!");
+    if (requester.authority === 10){
+        // Get owner of product
+        const owner = await User.findOne({_id: product.ownerID});
+        if(!owner) return res.status(400).send("The owner of the product does not exist or was deleted!");
+        // remove product from requester owned list
+        owner.ownedProducts.pull(product._id);
+        const savedOwner = await owner.save();
+        if(!savedOwner) return res.status(500).send("Internal Server Error : An error occured while trying to update owner owned products list, contact administrator!");
+        // delete all the key linked and refund unused ones
+        await Promise.all(product.keys.map(async (key) => {
+            const keyToDelete = await Key.findOne({_id: key});
+            const keyOwner = await User.findOne({_id: keyToDelete.creatorID});
+            if (keyToDelete && keyOwner){
+                if (!keyToDelete.used){keyOwner.credits = keyOwner.credits + 10; await keyOwner.save();}
+                await keyToDelete.delete();
+            }else{
+                await keyToDelete.delete();
+            }
+        }))
+        // remove product id from members isPartOfProducts list
+        await Promise.all(product.members.map(async (member) => {
+            const memberToRemove = await User.findOne({_id: member});
+            if (memberToRemove){
+                memberToRemove.isPartOfProducts.pull(product._id);
+                await memberToRemove.save();
+            }
+        }))
+        const productDeleted = await product.delete();
+        if(!productDeleted) return res.status(500).send("Internal Server Error : An error occured while trying to delete the product, contact the owner!");
+        res.status(200).send("Product successfully deleted!");
+    }else {
+        if (product.ownerID.toString() !== requester._id) return res.status(401).send("You cannot delete a product you do not own!");
+        // remove product from requester owned list
         requester.ownedProducts.pull(product._id);
-        requester.isPartOfProducts.push(product._id);
         const savedRequester = await requester.save();
-        if(!savedRequester) return res.status(500).send("Internal Server Error : Could not update the requester during the transfer of ownership, contact the owner!");
-        firstUser.ownedProducts.push(product._id);
-        firstUser.isPartOfProducts.pull(product._id);
-        const savedFirstUser = await firstUser.save();
-        if(!savedFirstUser) return res.status(500).send("Internal Server Error : Could not update the first user during the transfer of ownership, contact the owner!");
-        res.status(200).send("Product transfered successfully!");
+        if(!savedRequester) return res.status(500).send("Internal Server Error : An error occured while trying to update owner owned products list, contact administrator!");
+        // delete all the key linked and refund unused ones
+        await Promise.all(product.keys.map(async (key) => {
+            const keyToDelete = await Key.findOne({_id: key});
+            const keyOwner = await User.findOne({_id: keyToDelete.creatorID});
+            if (keyToDelete && keyOwner){
+                if (!keyToDelete.used){keyOwner.credits = keyOwner.credits + 10; await keyOwner.save();}
+                await keyToDelete.delete();
+            }else{
+                await keyToDelete.delete();
+            }
+        }))
+        // remove product id from members isPartOfProducts list
+        await Promise.all(product.members.map(async (member) => {
+            const memberToRemove = await User.findOne({_id: member});
+            if (memberToRemove){
+                memberToRemove.isPartOfProducts.pull(product._id);
+                await memberToRemove.save();
+            }
+        }))
+        const productDeleted = await product.delete();
+        if(!productDeleted) return res.status(500).send("Internal Server Error : An error occured while trying to delete the product, contact the owner!");
+        res.status(200).send("Product successfully deleted");
     }
 })
-
-
-// TODO [PATCH] Add a method "transferProduct(productID, newOwnerID)" to transfer a product that the logged user own to another user (need to clear all the key that the owner generated)
-
-// TODO [DELETE] Add a method "deleteProduct(productID)" to delete a product with all the linked keys
-
-
 
 
 module.exports = router;
