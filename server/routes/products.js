@@ -39,7 +39,52 @@ router.get('/:productID', verify, async(req, res) => {
     if (!product) return res.status(400).send("This product does not exist or was deleted!");
     res.status(200).send(product);
 })
-//TODO ADD A PRODUCT GET KEYS
+
+/**
+ * @swagger
+ * /products/getKeys/{productID}:
+ *   get:
+ *      description: Use to get all the key of a product you own
+ *      tags:
+ *          - Product
+ *      security:
+ *          - Bearer: []
+ *      parameters:
+ *          - in: path
+ *            name: productID
+ *            schema:
+ *              type: integer
+ *            required: true
+ *      responses:
+ *         '200':
+ *           description: Successfull Request
+ *         '400':
+ *           description: Product does not exist
+ *         '401':
+ *           description: Unauthorized
+ *         '500':
+ *           description: Internal servor error
+ */
+router.get('/getKeys/:productID', verify, async(req, res) => {
+    if(!req.params.productID) return res.status(400).send("You did not provide any product ID!")
+    const product = await Product.findOne({_id: mongoose.Types.ObjectId(req.params.productID)});
+    if (!product) return res.status(400).send("This product does not exist or was deleted!");
+    const keyArray = [];
+    for (const key of product.keys){
+        const keyToUpdate = await Key.findOne({_id: key});
+        if (keyToUpdate){
+            keyArray.push({
+                creatorID: keyToUpdate.creatorID,
+                UUID: keyToUpdate.UUID,
+                creationDate: keyToUpdate.creationDate,
+                expirationDate: keyToUpdate.expirationDate
+            })
+        }
+    }
+    res.status(200).send(keyArray);
+})
+
+
 /**
  * @swagger
  * /products/create:
