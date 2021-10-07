@@ -755,16 +755,16 @@ router.patch('/updateInvite', verify, async(req, res) => {
  * @swagger
  * /users/:
  *   delete:
- *      description: Use to delete your account
+ *      description: Use to delete logged account, and also deleting all linked product and keys
  *      tags:
  *          - User
  *      security:
  *          - Bearer: []
  *      responses:
  *         '200':
-     *       description: Successfully Deleted
+ *           description: Successfully Deleted
  *         '400':
- *           description: Token does not exist
+ *           description: User does not exist
  *         '401':
  *           description: Unauthorized
  *         '500':
@@ -773,10 +773,52 @@ router.patch('/updateInvite', verify, async(req, res) => {
 router.delete('/', verify, async(req, res) => {
     const user = await User.findOne({ _id: mongoose.Types.ObjectId(req.user._id) })
     if (!user) return res.status(400).send({ message: "The Token you used does not belong to an user" });
+    if (user.ownedProducts.length !== 0){
+        for (const product of user.ownedProducts) {
+            const productToUpdate = await Product.findOne({_id: product})
+            if (productToUpdate){
+                for (const member of productToUpdate.members){
+                    const memberToUpdate = await User.findOne({_id: member});
+                    if (memberToUpdate){
+                        memberToUpdate.isPartOfProducts.pull(product);
+                        await memberToUpdate.save();
+                    }
+                }
+                for (const key of productToUpdate.keys){
+                    const keyToUpdate = await Key.findOne({_id: key});
+                    if (keyToUpdate){
+                        await keyToUpdate.delete();
+                    }
+                }
+            }
+
+        }
+        for (const product of user.ownedProducts) {
+            const productToUpdate = await Product.findOne({_id: product})
+            if (productToUpdate){
+                await productToUpdate.delete();
+            }
+        }
+    }
+    if (user.isPartOfProducts.length !== 0){
+        for (const product of user.isPartOfProducts){
+            const productToUpdate = await Product.findOne({_id: product});
+            if (productToUpdate){
+                productToUpdate.members.pull(mongoose.Types.ObjectId(user._id));
+                await productToUpdate.save();
+                for (const key of productToUpdate.keys){
+                    const keyToUpdate = await Key.findOne({_id: key});
+                    if (keyToUpdate && keyToUpdate.creatorID.toString() === user._id.toString()){
+                        await keyToUpdate.delete();
+                    }
+                }
+            }
+        }
+    }
     user.delete();
     res.status(200).send({ message: "Deleted User!" })
 })
-//TODO Make in sort that when you delete a user, it deletes all ownedProducts and linked keys
+
 /**
  * @swagger
  * /users/{id}/{adminSecretPassword}:

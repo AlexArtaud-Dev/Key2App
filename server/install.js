@@ -6,7 +6,7 @@ const fs = require('fs')
 const randtoken = require('rand-token');
 const ts = new Date();
 let mongoDBLink;
-let token;
+let token, ownerSecret;
 let username, email, password, ownerID;
 
 console.clear();
@@ -59,9 +59,11 @@ setTimeout(async () => {
                     r2.close();
                     setTimeout(async () => {
                         console.clear();
-                        console.log("Generating your secret token ...")
+                        console.log("Generating your secret token and owner secret code ...")
                         token = await randtoken.generate(128);
+                        ownerSecret = await randtoken.generate(128);
                         console.log("Your secret token is : " + token);
+                        console.log("Your owner secret code is : " + ownerSecret);
                         const r3 = await readline.createInterface({
                             input: process.stdin,
                             output: process.stdout
@@ -149,7 +151,7 @@ setTimeout(async () => {
                                                                                 r7.question("You already successfully setup the project before. Do you want to erase the previous installation ? (Y/N)" , (answer) => {
                                                                                    if (answer.toLowerCase().includes("y")) {
                                                                                         console.clear()
-                                                                                       fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}\nOWNER_ID = ${ownerID}`, function(err) {
+                                                                                       fs.writeFile("./.env", `DB_CONNECTION = ${mongoDBLink}\nTOKEN_SECRET = ${token}\nOWNER_SECRET = ${ownerSecret}\nOWNER_ID = ${ownerID}`, function(err) {
                                                                                                if(err) {
                                                                                                    return console.log(err);
                                                                                                }
