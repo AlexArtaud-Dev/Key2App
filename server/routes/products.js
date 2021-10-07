@@ -39,7 +39,7 @@ router.get('/:productID', verify, async(req, res) => {
     if (!product) return res.status(400).send("This product does not exist or was deleted!");
     res.status(200).send(product);
 })
-
+//TODO ADD A PRODUCT GET KEYS
 /**
  * @swagger
  * /products/create:
@@ -526,7 +526,8 @@ router.delete('/clearKeys', verify, async(req, res) => {
             const keyToDelete = await Key.findOne({_id: key})
             const owner = await User.findOne({_id: keyToDelete.creatorID});
             if (keyToDelete && owner){
-                if (keyToDelete.used === true){
+                //Fixed 07/10/2021 - 15:38
+                if (!keyToDelete.used){
                     owner.credits = owner.credits + 10;
                     await owner.save();
                     product.keys.pull(mongoose.Types.ObjectId(keyToDelete._id));

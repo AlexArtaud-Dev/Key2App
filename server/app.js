@@ -31,6 +31,7 @@ app.use(cors({ origin: '*' }));
 
 const usersRoute = require('./routes/users');
 const productsRoute = require('./routes/products');
+const keysRoute = require('./routes/keys');
 const authRoute = require('./routes/auth');
 
 
@@ -39,6 +40,7 @@ const authRoute = require('./routes/auth');
 app.use('/api/user', authRoute);
 app.use('/api/users', usersRoute);
 app.use('/api/products', productsRoute);
+app.use('/api/keys', keysRoute);
 
 // Server Listening
 https.createServer({
