@@ -183,5 +183,9 @@ router.post('/connect', async(req, res) => {
     return res.status(200).send("Connection Successfull");
 })
 
+// TODO - Add a method to change the HWID Lock Data
+
+// TODO - Add the automatic expired key cleaner
+
 
 module.exports = router;
