@@ -86,8 +86,6 @@ router.post('/UUIDtoKEY', verify, async(req, res) => {
  *      description: Use to activate a key, once done, it will use the key, and you can't stop the expiration timer. You can only change the HWID lock
  *      tags:
  *          - Key
- *      security:
- *          - Bearer: []
  *      parameters:
  *          - in: body
  *            name: Key
@@ -111,7 +109,7 @@ router.post('/UUIDtoKEY', verify, async(req, res) => {
  *         '500':
  *           description: Internal servor error
  */
-router.post('/activate', verify, async(req, res) => {
+router.post('/activate', async(req, res) => {
     if(!req.body.key) return res.status(400).send("You did not provide any key !");
     if(!req.body.hwidData) return res.status(400).send("You did not provide any HWID Data to lock the key !");
     if (!uuidKey.isAPIKey(req.body.key)) return res.status(400).send("The key you provided is not a key from Key2App");
@@ -180,8 +178,17 @@ router.post('/connect', async(req, res) => {
     const keyToCheck = await Key.findOne({_id: mongoose.Types.ObjectId(infosRequest._id)});
     if (!keyToCheck) return res.status(401).send("Unauthorized ! The key does not exist anymore !");
     if (keyToCheck._id.toString() !== tokenToCheck.keyID.toString()) return res.status(401).send("Unauthorized !");
+    if (keyToCheck.expired){
+        await tokenToCheck.delete();
+        productToCheck.keys.pull(mongoose.Types.ObjectId(keyToCheck._id));
+        const savedProduct = await productToCheck.save();
+        if (!savedProduct) return res.status(500).send("Internal Server Error : Could not delete expired key from the product");
+        await keyToCheck.delete();
+        return res.status(401).send("Unauthorized : Key Expired!");
+    }
     return res.status(200).send("Connection Successfull");
 })
+
 
 // TODO - Add a method to change the HWID Lock Data
 

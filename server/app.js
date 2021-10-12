@@ -12,7 +12,8 @@ const swaggerUI = require("swagger-ui-express")
 const serverKey = fs.readFileSync("./SSL_Cert/server.key")
 const serverCert = fs.readFileSync("./SSL_Cert/server.cert")
 const swaggerOptions = require("./utils/swaggerOptions")
-const {createUserTest} = require("./test_app");
+const keyCleaner = require("./utils/keyCleaner")
+// const {createUserTest} = require("./test_app");
 // Connect to DB
 db.init();
 
@@ -51,4 +52,5 @@ https.createServer({
         console.clear();
         console.log(`${ts.toLocaleString()} - App listening on port ${port}! Go to https://localhost:${port}/v1/swagger`)
         // open(`https://localhost:${port}/v1/swagger`, {app: 'firefox'});
+        keyCleaner(3600000);
     })
